@@ -6,7 +6,7 @@ const crypto = require('crypto');
 initializeApp();
 const db = getDatabase();
 const REGION = 'europe-west1';
-const DEFAULTS = { requiredMinutes: 60, cooldownMinutes: 30, maxPending: 1, requestsEnabled: true };
+const DEFAULTS = { requiredMinutes: 60, cooldownMinutes: 0, maxPending: 1, requestsEnabled: true, volume: 80 };
 const now = () => Date.now();
 function requireAuth(req) { if (!req.auth) throw new HttpsError('unauthenticated', 'Сначала войди в аккаунт.'); return req.auth.uid; }
 function requireAdmin(req) { const uid=requireAuth(req); if(req.auth.token.admin!==true) throw new HttpsError('permission-denied','Требуются права администратора.'); return uid; }
@@ -42,17 +42,23 @@ exports.tracksRequestByViewerId = onCall({region:REGION,enforceAppCheck:false},a
  const uid=(await db.ref(`tracks/viewerIds/${viewerId}`).get()).val();if(!uid)throw new HttpsError('not-found','ID не найден. Сначала открой STRIMKO и получи ID.');
  const s=await settings();if(!s.requestsEnabled)throw new HttpsError('failed-precondition','Заказы сейчас выключены.');
  const userRef=db.ref(`tracks/users/${uid}`),snap=await userRef.get(),u=snap.val();if(!u)throw new HttpsError('not-found','Профиль ID не найден.');
- const needed=Math.max(1,Number(s.requiredMinutes)||60)*60;if(Number(u.watchSeconds||0)<needed)throw new HttpsError('failed-precondition',`Нужно посмотреть ещё ${Math.ceil((needed-Number(u.watchSeconds||0))/60)} минут.`);
- const t=now(),cooldown=Math.max(0,Number(s.cooldownMinutes)||0)*60000,last=Number(u.lastOrderAt||0);
- if(t-last<cooldown)throw new HttpsError('resource-exhausted',`Повторный заказ доступен через ${Math.ceil((cooldown-(t-last))/60000)} мин.`);
+ const needed=Math.max(1,Number(s.requiredMinutes)||60)*60,t=now(),originalWatchSeconds=Number(u.watchSeconds||0);
+ if(Number(u.watchSeconds||0)<needed)throw new HttpsError('failed-precondition',`Нужно посмотреть ещё ${Math.ceil((needed-Number(u.watchSeconds||0))/60)} минут.`);
  const userOrders=(await db.ref(`tracks/userOrders/${uid}`).get()).val()||{};let pending=0;
  for(const orderId of Object.keys(userOrders)){const os=await db.ref(`tracks/queue/${orderId}/status`).get();if(['pending','playing'].includes(os.val()))pending++;}
  if(pending>=Math.max(1,Number(s.maxPending)||1))throw new HttpsError('resource-exhausted','У тебя уже есть трек в очереди.');
- let accepted=false;await userRef.transaction(old=>{if(!old)return;if(now()-Number(old.lastOrderAt||0)<cooldown||Number(old.orderLockAt||0)>t-15000)return;old.lastOrderAt=t;old.orderLockAt=t;accepted=true;return old;});
- if(!accepted)throw new HttpsError('resource-exhausted','Заказ уже отправлен или действует пауза.');
- const orderRef=db.ref('tracks/queue').push();await orderRef.set({displayName,title:title||`YouTube · ${videoId}`,videoId,status:'pending',createdAt:t});
- await db.ref(`tracks/orderOwners/${orderRef.key}`).set(uid);await db.ref(`tracks/userOrders/${uid}/${orderRef.key}`).set(true);
- return {ok:true,orderNumber:orderRef.key};
+ let accepted=false;const tx=await userRef.transaction(old=>{if(!old)return;if(Number(old.watchSeconds||0)<needed||Number(old.orderLockAt||0)>t-15000)return;old.lastOrderAt=t;old.orderLockAt=t;old.watchSeconds=0;old.watchProgressResetAt=t;accepted=true;return old;});
+ if(!tx.committed||!accepted)throw new HttpsError('resource-exhausted','Прогресс изменился или заказ уже отправлен. Обнови ID и попробуй снова.');
+ try{
+  const orderRef=db.ref('tracks/queue').push();
+  const record={displayName,title:title||`YouTube · ${videoId}`,videoId,status:'pending',createdAt:t,ownerUid:uid};
+  await db.ref().update({[`tracks/queue/${orderRef.key}`]:record,[`tracks/orderOwners/${orderRef.key}`]:uid,[`tracks/userOrders/${uid}/${orderRef.key}`]:true});
+  return {ok:true,orderNumber:orderRef.key,watchSeconds:0};
+ }catch(err){
+  // Restore the exact progress if the queue write fails.
+  await userRef.update({watchSeconds:originalWatchSeconds,watchProgressResetAt:null});
+  throw new HttpsError('internal','Не удалось добавить трек в очередь. Попробуй ещё раз.');
+ }
 });
 
 exports.tracksCreateProfile = onCall({region:REGION, enforceAppCheck:false}, async req=>{
@@ -74,21 +80,21 @@ exports.tracksRequest = onCall({region:REGION, enforceAppCheck:false}, async req
  const s=await settings();if(!s.requestsEnabled)throw new HttpsError('failed-precondition','Заказы сейчас выключены.');
  const userRef=db.ref(`tracks/users/${uid}`), userSnap=await userRef.get(), u=userSnap.val();if(!u)throw new HttpsError('failed-precondition','Профиль не найден. Выйди и войди снова.');
  const needed=Math.max(1,Number(s.requiredMinutes)||60)*60;if(Number(u.watchSeconds||0)<needed)throw new HttpsError('failed-precondition',`Нужно посмотреть ещё ${Math.ceil((needed-Number(u.watchSeconds||0))/60)} минут.`);
- const t=now(), cooldown=Math.max(0,Number(s.cooldownMinutes)||0)*60000;if(t-Number(u.lastOrderAt||0)<cooldown)throw new HttpsError('resource-exhausted',`Повторный заказ доступен через ${Math.ceil((cooldown-(t-Number(u.lastOrderAt||0)))/60000)} мин.`);
+ const t=now();
  const userOrders=(await db.ref(`tracks/userOrders/${uid}`).get()).val()||{};let pending=0;for(const orderId of Object.keys(userOrders)){const orderSnap=await db.ref(`tracks/queue/${orderId}/status`).get();if(['pending','playing'].includes(orderSnap.val()))pending++;}if(pending>=Math.max(1,Number(s.maxPending)||1))throw new HttpsError('resource-exhausted','У тебя уже есть трек в очереди.');
  const orderRef=db.ref('tracks/queue').push();const record={displayName:cleanName(u.displayName),videoId,title:title||`YouTube · ${videoId}`,status:'pending',createdAt:t};
  // Transaction protects against simultaneous requests by the same account.
- let accepted=false;await userRef.transaction(old=>{if(!old)return;const last=Number(old.lastOrderAt||0);if(last>=t || now()-last<cooldown || Number(old.orderLockAt||0)>t-15000)return;old.lastOrderAt=t;old.orderLockAt=t;accepted=true;return old;});if(!accepted)throw new HttpsError('resource-exhausted','Заказ уже отправлен или действует пауза.');
+ let accepted=false;await userRef.transaction(old=>{if(!old)return;const last=Number(old.lastOrderAt||0);if(last>=t || Number(old.orderLockAt||0)>t-15000 || Number(old.watchSeconds||0)<needed)return;old.lastOrderAt=t;old.orderLockAt=t;old.watchSeconds=0;old.watchProgressResetAt=t;accepted=true;return old;});if(!accepted)throw new HttpsError('resource-exhausted','Заказ уже отправлен или действует пауза.');
  await orderRef.set(record);await db.ref(`tracks/orderOwners/${orderRef.key}`).set(uid);await db.ref(`tracks/userOrders/${uid}/${orderRef.key}`).set(true);return {ok:true,orderNumber:orderRef.key};
 });
 exports.tracksAdminSetSettings = onCall({region:REGION, enforceAppCheck:false}, async req=>{
- requireAdmin(req);const d=req.data||{};const v={requiredMinutes:Math.min(1440,Math.max(1,Math.floor(Number(d.requiredMinutes)||60))),cooldownMinutes:Math.min(1440,Math.max(0,Math.floor(Number(d.cooldownMinutes)||0))),maxPending:Math.min(10,Math.max(1,Math.floor(Number(d.maxPending)||1))),requestsEnabled:d.requestsEnabled===true,updatedAt:now()};await db.ref('tracks/publicSettings').set(v);return {ok:true,settings:v};
+ requireAdmin(req);const d=req.data||{};const v={requiredMinutes:Math.min(1440,Math.max(1,Math.floor(Number(d.requiredMinutes)||60))),cooldownMinutes:0,maxPending:Math.min(10,Math.max(1,Math.floor(Number(d.maxPending)||1))),requestsEnabled:d.requestsEnabled===true,volume:Math.min(100,Math.max(0,Math.floor(Number(d.volume??80)))),updatedAt:now()};await db.ref('tracks/publicSettings').set(v);return {ok:true,settings:v};
 });
 exports.tracksAdminQueueAction = onCall({region:REGION, enforceAppCheck:false}, async req=>{
  requireAdmin(req);const {orderId,action}=req.data||{};if(typeof orderId!=='string'||!orderId||!['playing','done','rejected','moveTop'].includes(action))throw new HttpsError('invalid-argument','Некорректная команда.');const ref=db.ref(`tracks/queue/${orderId}`);const snap=await ref.get();if(!snap.exists())throw new HttpsError('not-found','Заказ не найден.');const order=snap.val();
  if(action==='playing'){
   const old=(await db.ref('tracks/active').get()).val();if(old?.orderId&&old.orderId!==orderId){await db.ref(`tracks/queue/${old.orderId}/status`).set('pending');}
-  await ref.update({status:'playing'});await db.ref('tracks/active').set({orderId,videoId:order.videoId,title:order.title,displayName:order.displayName,startedAt:now(),updatedAt:now()});
+  await ref.update({status:'playing'});await db.ref('tracks/active').set({orderId,videoId:order.videoId,title:order.title,displayName:order.displayName,ownerUid:order.ownerUid||null,startedAt:now(),updatedAt:now()});
  }else if(action==='moveTop'){await ref.update({createdAt:0});}
  else {await ref.update({status:action,finishedAt:now()});const owner=(await db.ref(`tracks/orderOwners/${orderId}`).get()).val();if(owner)await db.ref(`tracks/userOrders/${owner}/${orderId}`).remove();const active=(await db.ref('tracks/active').get()).val();if(active?.orderId===orderId)await db.ref('tracks/active').remove();}
  return {ok:true};
