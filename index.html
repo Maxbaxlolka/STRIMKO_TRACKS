@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STRIMKO TRACKS</title>
+
+<link rel="stylesheet" href="style.css">
+
+<script src="firebase-config.js"></script>
+<script src="worker-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+</head>
+
+<body>
+<div class="bg"></div>
+
+<header class="top">
+    <a class="brand" href="./">STRIMKO <span>TRACKS</span></a>
+    <div id="accountStatus" class="muted">Введи ID STRIMKO</div>
+</header>
+
+<main class="layout">
+
+<section class="hero card">
+    <div class="eyebrow">🎧 MUSIC REQUEST SYSTEM</div>
+
+    <h1>Твоя музыка —<br><span>в эфире STRIMKO</span></h1>
+
+    <p>
+        Получи ID на основном сайте STRIMKO после начала просмотра,
+        скопируй его сюда и заказывай треки.
+    </p>
+
+    <div class="watch">
+        <label>
+            Твой ID STRIMKO
+            <input
+                id="viewerId"
+                type="text"
+                maxlength="64"
+                placeholder="SK-XXXXXXXXXXXXXXXXXXXXXXXX"
+                autocomplete="off"
+                spellcheck="false"
+            >
+        </label>
+
+        <button id="checkIdBtn" class="wide">Проверить ID</button>
+
+        <div id="idMessage" class="message"></div>
+
+        <div class="watchline">
+            <span>Твой прогресс</span>
+            <strong id="progressText">—</strong>
+        </div>
+
+        <div class="bar">
+            <i id="progressBar"></i>
+        </div>
+
+        <small id="progressHint">
+            Сначала скопируй ID на основном сайте STRIMKO.
+        </small>
+    </div>
+</section>
+
+<section class="card request" id="requestCard" hidden>
+    <div class="sectionhead">
+        <div>
+            <div class="eyebrow">REQUEST A TRACK</div>
+            <h2>Заказать трек</h2>
+        </div>
+        <span class="pill" id="eligibilityPill">Проверка…</span>
+    </div>
+
+    <p class="muted">
+        Вставь ссылку на видео YouTube. Заказ проверяется сервером.
+    </p>
+
+    <label>
+        Имя для очереди (необязательно)
+        <input
+            id="displayName"
+            maxlength="24"
+            placeholder="Как показывать тебя"
+        >
+    </label>
+
+    <label>
+        Ссылка на YouTube
+        <input
+            id="youtubeUrl"
+            type="url"
+            placeholder="https://www.youtube.com/watch?v=…"
+        >
+    </label>
+
+    <label>
+        Название трека (необязательно)
+        <input
+            id="trackTitle"
+            maxlength="100"
+            placeholder="Исполнитель — название"
+        >
+    </label>
+
+    <button id="requestBtn" class="wide">🎵 Отправить заказ</button>
+
+    <div id="requestMessage" class="message"></div>
+
+    <div class="fine">
+        Некоторые YouTube-видео запрещают встраивание или автоматическое воспроизведение.
+    </div>
+</section>
+
+<section class="card queue">
+    <div class="sectionhead">
+        <div>
+            <div class="eyebrow">LIVE QUEUE</div>
+            <h2>Очередь треков</h2>
+        </div>
+    </div>
+
+    <div id="queueList" class="queueList">
+        <div class="empty">Очередь пока пуста.</div>
+    </div>
+</section>
+
+<section class="card admin">
+    <details>
+        <summary>Вход администратора</summary>
+
+        <div class="adminLogin">
+            <label>
+                Email администратора
+                <input
+                    id="adminEmail"
+                    type="email"
+                    autocomplete="username"
+                >
+            </label>
+
+            <label>
+                Пароль
+                <input
+                    id="adminPassword"
+                    type="password"
+                    autocomplete="current-password"
+                >
+            </label>
+
+            <button id="adminLoginBtn">Войти</button>
+
+            <button id="adminLogoutBtn" class="secondary" hidden>
+                Выйти
+            </button>
+
+            <div id="adminLoginMessage" class="message"></div>
+        </div>
+    </details>
+</section>
+
+<section class="card admin" id="adminCard" hidden>
+    <div class="eyebrow">ADMIN CONTROL</div>
+    <h2>Настройки STRIMKO TRACKS</h2>
+
+    <label>
+        Минут просмотра для заказа
+        <input
+            id="requiredMinutes"
+            type="number"
+            min="1"
+            max="1440"
+            value="60"
+        >
+    </label>
+
+    <label>
+        Громкость треков в OBS: <strong id="volumeValue">80%</strong>
+        <input id="trackVolume" type="range" min="0" max="100" step="1" value="80">
+    </label>
+
+    <label>
+        Максимум треков в очереди на одного зрителя
+        <input
+            id="maxPending"
+            type="number"
+            min="1"
+            max="10"
+            value="1"
+        >
+    </label>
+
+    <label class="check">
+        <input id="requestsEnabled" type="checkbox" checked>
+        Принимать новые заказы
+    </label>
+
+    <button id="saveSettingsBtn">Сохранить настройки</button>
+
+    <div id="adminMessage" class="message"></div>
+
+    <h3>Управление очередью</h3>
+    <div id="adminQueue"></div>
+</section>
+
+</main>
+
+<footer>
+    STRIMKO TRACKS · ID создаётся на основном сайте.
+    Не публикуй свой ID: он используется для подтверждения заказов.
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

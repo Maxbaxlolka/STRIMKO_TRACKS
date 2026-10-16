@@ -1,0 +1,6 @@
+name = "strimko-tracks-api"
+main = "worker.js"
+compatibility_date = "2026-10-16"
+
+[vars]
+# Secrets are configured separately in Cloudflare. Do not put private keys here.

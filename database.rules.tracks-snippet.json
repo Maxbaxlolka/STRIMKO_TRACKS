@@ -1,0 +1,44 @@
+{
+  "tracks": {
+    "publicSettings": {
+      ".read": true,
+      ".write": "auth != null && auth.token.admin === true"
+    },
+    "active": {
+      ".read": true,
+      ".write": false
+    },
+    "queue": {
+      ".read": true,
+      ".write": false
+    },
+    "users": {
+      "$uid": {
+        ".read": true,
+        ".write": false
+      }
+    },
+    "sessions": {
+      ".read": false,
+      ".write": false
+    },
+    "userOrders": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || auth.token.admin === true)",
+        ".write": false
+      }
+    },
+    "orderOwners": {
+      ".read": false,
+      ".write": false
+    },
+    "viewerIds": {
+      ".read": false,
+      ".write": false
+    },
+    "meta": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
