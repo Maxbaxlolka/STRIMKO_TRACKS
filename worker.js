@@ -27,7 +27,8 @@ function validVideoId(v) {
 }
 __name(validVideoId, "validVideoId");
 function normalizeViewerId(v) {
-  return typeof v === "string" && /^SK-[A-F0-9]{24}$/.test(v.trim().toUpperCase()) ? v.trim().toUpperCase() : null;
+  const match = typeof v === "string" ? /^SK-([A-Za-z0-9]{28})$/i.exec(v.trim()) : null;
+  return match ? "SK-" + match[1] : null;
 }
 __name(normalizeViewerId, "normalizeViewerId");
 function encodePath(path) {
@@ -136,8 +137,11 @@ async function settings(env) {
 }
 __name(settings, "settings");
 async function lookupViewer(env, viewerId) {
-  const uid = await getDb(env, `tracks/viewerIds/${viewerId}`);
-  if (typeof uid !== "string" || !uid) throw new HttpError(404, "ID \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043E\u0442\u043A\u0440\u043E\u0439 STRIMKO \u0438 \u043F\u043E\u043B\u0443\u0447\u0438 ID.");
+  const match = /^SK-([A-Za-z0-9]{28})$/.exec(String(viewerId || ""));
+  if (!match) throw new HttpError(400, "Неверный формат STRIMKO ID. Скопируй его без изменений с основного сайта.");
+  const uid = match[1];
+  const user = await getDb(env, `tracks/users/${uid}`);
+  if (!user) throw new HttpError(404, "ID не найден. Сначала открой основной сайт STRIMKO и дождись создания ID.");
   return uid;
 }
 __name(lookupViewer, "lookupViewer");
@@ -150,15 +154,29 @@ var HttpError = class extends Error {
     this.status = status;
   }
 };
-async function verifyAdmin(request, env) {
-  const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") || "");
-  if (!match) throw new HttpError(401, "\u041D\u0443\u0436\u043D\u043E \u0432\u043E\u0439\u0442\u0438 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430.");
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_API_KEY || "")}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ idToken: match[1] }) });
+async function lookupFirebaseAccount(idToken, env) {
+  if (!env.FIREBASE_API_KEY) throw new Error("Не настроен секрет FIREBASE_API_KEY в Cloudflare.");
+  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_API_KEY)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ idToken })
+  });
   const data = await response.json();
   const account = data.users && data.users[0];
-  if (!response.ok || !account) throw new HttpError(401, "Firebase lookup failed: HTTP " + response.status + "; " + (data.error?.message || "user not found"));
+  if (!response.ok || !account) throw new HttpError(401, "Не удалось подтвердить вход Firebase. Войди заново.");
+  return account;
+}
+__name(lookupFirebaseAccount, "lookupFirebaseAccount");
+async function verifyAdmin(request, env) {
+  const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") || "");
+  if (!match) throw new HttpError(401, "Нужно войти в аккаунт администратора.");
+  const account = await lookupFirebaseAccount(match[1], env);
   const allowedEmail = String(env.ADMIN_EMAIL || "").trim().toLowerCase();
-  if (!allowedEmail || String(account.email || "").toLowerCase() !== allowedEmail || account.emailVerified !== true) throw new HttpError(403, "\u041D\u0435\u0442 \u043F\u0440\u0430\u0432 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430. \u041F\u0440\u043E\u0432\u0435\u0440\u044C ADMIN_EMAIL \u0432 Cloudflare \u0438 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u043F\u043E\u0447\u0442\u044B.");
+  const allowedUid = String(env.ADMIN_UID || "").trim();
+  if (!allowedEmail || !allowedUid) throw new HttpError(500, "Не настроены секреты ADMIN_EMAIL и ADMIN_UID в Cloudflare.");
+  if (String(account.localId || "") !== allowedUid || String(account.email || "").toLowerCase() !== allowedEmail) {
+    throw new HttpError(403, "У этого Firebase-аккаунта нет доступа к панели STRIMKO TRACKS. Проверь ADMIN_EMAIL и ADMIN_UID в Cloudflare.");
+  }
   return account;
 }
 __name(verifyAdmin, "verifyAdmin");
@@ -185,6 +203,33 @@ async function clearOwnerOrder(env, order) {
   if (ownerUid) await removeDb(env, `tracks/userOrders/${ownerUid}/${order.id}`);
 }
 __name(clearOwnerOrder, "clearOwnerOrder");
+async function heartbeat(request, env, body) {
+  const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") || "");
+  if (!match) throw new HttpError(401, "Не удалось подтвердить сессию зрителя. Обнови основной сайт STRIMKO.");
+  const account = await lookupFirebaseAccount(match[1], env);
+  const uid = String(account.localId || "");
+  if (!/^[A-Za-z0-9]{28}$/.test(uid)) throw new HttpError(401, "Некорректная сессия зрителя.");
+  const now = Date.now();
+  const playing = body.playing === true;
+  const result = await mutateDb(env, `tracks/users/${uid}`, old => {
+    const profile = old || { displayName: "Зритель", watchSeconds: 0, lastOrderAt: 0, createdAt: now };
+    if (!playing) return { ...profile, lastHeartbeatAt: 0, updatedAt: now };
+    const last = Number(profile.lastHeartbeatAt || 0);
+    let added = 0;
+    if (last > 0) {
+      const elapsed = Math.floor((now - last) / 1000);
+      if (elapsed >= 15 && elapsed <= 35) added = Math.min(elapsed, 25);
+    }
+    return {
+      ...profile,
+      watchSeconds: Math.max(0, Number(profile.watchSeconds || 0)) + added,
+      lastHeartbeatAt: now,
+      updatedAt: now
+    };
+  });
+  return { ok: true, watchSeconds: Number(result.value?.watchSeconds || 0) };
+}
+__name(heartbeat, "heartbeat");
 async function getProgress(env, body) {
   const viewerId = normalizeViewerId(body.viewerId);
   if (!viewerId) throw new HttpError(400, "\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442. \u0421\u043A\u043E\u043F\u0438\u0440\u0443\u0439 ID \u0441 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0433\u043E \u0441\u0430\u0439\u0442\u0430 STRIMKO.");
@@ -230,7 +275,7 @@ async function createOrder(env, body) {
     await putDb(env, `tracks/queue/${orderId}`, order);
     await putDb(env, `tracks/orderOwners/${orderId}`, uid);
     await putDb(env, `tracks/userOrders/${uid}/${orderId}`, true);
-    await patchDb(env, `tracks/users/${uid}`, { watchSeconds: 0, lastOrderAt: now, orderLockAt: 0, updatedAt: now });
+    await patchDb(env, `tracks/users/${uid}`, { watchSeconds: 0, lastOrderAt: now, orderLockAt: 0, lastHeartbeatAt: 0, updatedAt: now });
     return { ok: true, orderNumber: orderId, message: "\u0417\u0430\u043A\u0430\u0437 \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D \u0432 \u043A\u043E\u043D\u0435\u0446 \u043E\u0447\u0435\u0440\u0435\u0434\u0438. \u041F\u0440\u043E\u0433\u0440\u0435\u0441\u0441 \u0441\u0431\u0440\u043E\u0448\u0435\u043D." };
   } catch (e) {
     if (createdOrderId) {
@@ -323,6 +368,7 @@ var worker_default = {
       return json({ error: "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 JSON." }, 400);
     }
     try {
+      if (path === "/heartbeat") return json(await heartbeat(request, env, body));
       if (path === "/progress") return json(await getProgress(env, body));
       if (path === "/request") return json(await createOrder(env, body));
       if (path === "/finish") return json(await finishTrack(env, body));
