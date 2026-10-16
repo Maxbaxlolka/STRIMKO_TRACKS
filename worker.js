@@ -161,9 +161,20 @@ async function lookupFirebaseAccount(idToken, env) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ idToken })
   });
-  const data = await response.json();
+  let data = {};
+  try { data = await response.json(); } catch (_) {}
   const account = data.users && data.users[0];
-  if (!response.ok || !account) throw new HttpError(401, "Не удалось подтвердить вход Firebase. Войди заново.");
+  if (!response.ok || !account) {
+    const firebaseCode = String(data.error?.message || "UNKNOWN");
+    // Do not expose tokens or credentials; return the Firebase error code for diagnosis.
+    if (firebaseCode === "API_KEY_INVALID" || firebaseCode === "INVALID_API_KEY") {
+      throw new HttpError(500, "Worker: секрет FIREBASE_API_KEY неверен или относится к другому проекту Firebase.");
+    }
+    if (["INVALID_ID_TOKEN", "TOKEN_EXPIRED", "USER_DISABLED", "USER_NOT_FOUND", "INVALID_ID_TOKEN_AUD", "INVALID_ID_TOKEN_ISS"].includes(firebaseCode)) {
+      throw new HttpError(401, "Firebase отклонил ID-токен (" + firebaseCode + "). Обнови страницу; проверь, что основной сайт и Worker используют один проект Firebase.");
+    }
+    throw new HttpError(401, "Не удалось подтвердить вход Firebase (" + firebaseCode + "). Проверь FIREBASE_API_KEY в секретах Cloudflare и проект Firebase.");
+  }
   return account;
 }
 __name(lookupFirebaseAccount, "lookupFirebaseAccount");
