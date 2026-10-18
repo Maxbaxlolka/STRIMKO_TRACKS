@@ -29,7 +29,7 @@
 
     <h1>Твоя музыка —<br><span>в эфире STRIMKO</span></h1>
 
-    <p>Заказывай музыку без шкалы просмотра. До трёх активных заказов на зрителя.</p><div class="watch"><strong id="viewerStatus">Подключаем зрителя…</strong></div>
+    <p>Заказывай музыку без шкалы просмотра. Количество активных заказов устанавливает администратор.</p><div class="watch"><strong id="viewerStatus">Подключаем зрителя…</strong></div>
 </section>
 
 <section class="card request" id="requestCard">
@@ -38,7 +38,7 @@
             <div class="eyebrow">REQUEST A TRACK</div>
             <h2>Заказать трек</h2>
         </div>
-        <span class="pill" id="eligibilityPill">До 3 заказов</span>
+        <span class="pill" id="eligibilityPill">Лимит: 3</span>
     </div>
 
     <p class="muted">
@@ -143,6 +143,13 @@
         Принимать новые заказы
     </label>
 
+    <label>
+        Максимум активных заказов на зрителя: <strong id="maxOrdersValue">3</strong>
+        <input id="maxOrdersPerUser" type="range" min="1" max="10" step="1" value="3">
+    </label>
+    <label class="check"><input id="autoQueueEnabled" type="checkbox" checked> Автоматически запускать следующие треки</label>
+    <p class="muted">Автопереключение работает, пока эта вкладка открыта и администратор авторизован. OBS показывает и озвучивает треки.</p>
+    <div id="queueController" style="position:absolute;left:-9999px;width:2px;height:2px;overflow:hidden"></div>
     <button id="saveSettingsBtn">Сохранить настройки</button>
 
     <div id="adminMessage" class="message"></div>
@@ -154,9 +161,9 @@
 </main>
 
 <footer>
-    STRIMKO TRACKS · До трёх активных заказов на зрителя.
+    STRIMKO TRACKS · Количество активных заказов устанавливает администратор.
 </footer>
 
-<script src="app.js?v=20261018-direct"></script>
+<script src="app.js?v=20261018-auto-limit10"></script>
 </body>
 </html>
