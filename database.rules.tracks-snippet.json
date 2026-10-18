@@ -1,44 +1,16 @@
 {
   "tracks": {
-    "publicSettings": {
-      ".read": true,
-      ".write": "auth != null && auth.token.admin === true"
-    },
-    "active": {
-      ".read": true,
-      ".write": false
-    },
-    "queue": {
-      ".read": true,
-      ".write": false
-    },
-    "users": {
+    "requests": {
+      ".read": "auth != null",
       "$uid": {
-        ".read": true,
-        ".write": false
+        "$slot": {
+          ".write": "auth != null && (auth.uid === 'REPLACE_WITH_ADMIN_UID' || (auth.uid === $uid && ($slot === '0' || $slot === '1' || $slot === '2') && ((!data.exists()) || data.child('status').val() === 'done' || data.child('status').val() === 'skipped' || data.child('status').val() === 'rejected')))",
+          ".validate": "newData.hasChildren(['uid','slot','videoId','title','displayName','status','createdAt']) && newData.child('uid').val() === $uid && newData.child('slot').val() === $slot && newData.child('videoId').isString() && newData.child('videoId').val().matches(/^[A-Za-z0-9_-]{11}$/) && newData.child('title').isString() && newData.child('title').val().length <= 100 && newData.child('displayName').isString() && newData.child('displayName').val().length <= 24 && newData.child('createdAt').isNumber() && (auth.uid === 'REPLACE_WITH_ADMIN_UID' || (newData.child('status').val() === 'pending' && newData.child('createdAt').val() === now))",
+          "status": {".write": "auth != null && auth.uid === 'REPLACE_WITH_ADMIN_UID'"}
+        }
       }
     },
-    "sessions": {
-      ".read": false,
-      ".write": false
-    },
-    "userOrders": {
-      "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || auth.token.admin === true)",
-        ".write": false
-      }
-    },
-    "orderOwners": {
-      ".read": false,
-      ".write": false
-    },
-    "viewerIds": {
-      ".read": false,
-      ".write": false
-    },
-    "meta": {
-      ".read": false,
-      ".write": false
-    }
+    "active": {".read": true, ".write": "auth != null && auth.uid === 'REPLACE_WITH_ADMIN_UID'"},
+    "publicSettings": {".read": true, ".write": "auth != null && auth.uid === 'REPLACE_WITH_ADMIN_UID'"}
   }
 }
