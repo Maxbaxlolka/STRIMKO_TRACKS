@@ -133,6 +133,15 @@
     <div class="eyebrow">ADMIN CONTROL</div>
     <h2>Настройки STRIMKO TRACKS</h2>
 
+    <div style="margin:16px 0 22px;padding:16px;border:1px solid rgba(150,150,150,.35);border-radius:12px">
+        <strong>Ссылка для OBS (Источник «Браузер»)</strong>
+        <p class="muted">Скопируй ссылку и вставь её в OBS → Источники → Браузер → URL.</p>
+        <input id="obsOverlayUrl" type="text" readonly aria-label="Ссылка для OBS" style="width:100%;box-sizing:border-box;margin:8px 0" />
+        <button type="button" id="copyObsOverlayUrl">Скопировать ссылку для OBS</button>
+        <a id="openObsOverlay" href="overlay.html" target="_blank" rel="noopener noreferrer" style="margin-left:12px">Открыть плеер</a>
+        <div id="obsLinkMessage" class="message" aria-live="polite"></div>
+    </div>
+
     <label>
         Громкость треков в OBS: <strong id="volumeValue">80%</strong>
         <input id="trackVolume" type="range" min="0" max="100" step="1" value="80">
@@ -164,6 +173,25 @@
     STRIMKO TRACKS · Количество активных заказов устанавливает администратор.
 </footer>
 
-<script src="app.js?v=20261018-autoqueue-fix2"></script>
+<script>
+(function () {
+    const url = new URL('overlay.html', window.location.href).href;
+    const input = document.getElementById('obsOverlayUrl');
+    const button = document.getElementById('copyObsOverlayUrl');
+    const message = document.getElementById('obsLinkMessage');
+    input.value = url;
+    button.addEventListener('click', async function () {
+        try {
+            await navigator.clipboard.writeText(url);
+            message.textContent = 'Ссылка скопирована!';
+        } catch (_) {
+            input.focus();
+            input.select();
+            message.textContent = 'Выделена ссылка. Нажми Ctrl+C для копирования.';
+        }
+    });
+})();
+</script>
+<script src="app.js?v=20261018-admin-controls-4"></script>
 </body>
 </html>
