@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="style.css">
 
 <script src="firebase-config.js"></script>
-<script src="worker-config.js?v=20261016-fix1"></script>
+
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
@@ -19,7 +19,7 @@
 
 <header class="top">
     <a class="brand" href="./">STRIMKO <span>TRACKS</span></a>
-    <div id="accountStatus" class="muted">Введи ID STRIMKO</div>
+    <div id="accountStatus" class="muted">Подключение Firebase…</div>
 </header>
 
 <main class="layout">
@@ -29,54 +29,20 @@
 
     <h1>Твоя музыка —<br><span>в эфире STRIMKO</span></h1>
 
-    <p>
-        Получи ID на основном сайте STRIMKO после начала просмотра,
-        скопируй его сюда и заказывай треки.
-    </p>
-
-    <div class="watch">
-        <label>
-            Твой ID STRIMKO
-            <input
-                id="viewerId"
-                type="text"
-                maxlength="64"
-                placeholder="SK-XXXXXXXXXXXXXXXXXXXXXXXX"
-                autocomplete="off"
-                spellcheck="false"
-            >
-        </label>
-
-        <button id="checkIdBtn" class="wide">Проверить ID</button>
-
-        <div id="idMessage" class="message"></div>
-
-        <div class="watchline">
-            <span>Твой прогресс</span>
-            <strong id="progressText">—</strong>
-        </div>
-
-        <div class="bar">
-            <i id="progressBar"></i>
-        </div>
-
-        <small id="progressHint">
-            Сначала скопируй ID на основном сайте STRIMKO.
-        </small>
-    </div>
+    <p>Заказывай музыку без шкалы просмотра. До трёх активных заказов на зрителя.</p><div class="watch"><strong id="viewerStatus">Подключаем зрителя…</strong></div>
 </section>
 
-<section class="card request" id="requestCard" hidden>
+<section class="card request" id="requestCard">
     <div class="sectionhead">
         <div>
             <div class="eyebrow">REQUEST A TRACK</div>
             <h2>Заказать трек</h2>
         </div>
-        <span class="pill" id="eligibilityPill">Проверка…</span>
+        <span class="pill" id="eligibilityPill">До 3 заказов</span>
     </div>
 
     <p class="muted">
-        Вставь ссылку на видео YouTube. Заказ проверяется сервером.
+        Вставь ссылку YouTube и отправь заказ в очередь.
     </p>
 
     <label>
@@ -168,30 +134,8 @@
     <h2>Настройки STRIMKO TRACKS</h2>
 
     <label>
-        Минут просмотра для заказа
-        <input
-            id="requiredMinutes"
-            type="number"
-            min="1"
-            max="1440"
-            value="60"
-        >
-    </label>
-
-    <label>
         Громкость треков в OBS: <strong id="volumeValue">80%</strong>
         <input id="trackVolume" type="range" min="0" max="100" step="1" value="80">
-    </label>
-
-    <label>
-        Максимум треков в очереди на одного зрителя
-        <input
-            id="maxPending"
-            type="number"
-            min="1"
-            max="10"
-            value="1"
-        >
     </label>
 
     <label class="check">
@@ -210,10 +154,9 @@
 </main>
 
 <footer>
-    STRIMKO TRACKS · ID создаётся на основном сайте.
-    Не публикуй свой ID: он используется для подтверждения заказов.
+    STRIMKO TRACKS · До трёх активных заказов на зрителя.
 </footer>
 
-<script src="app.js?v=20261016-fix1"></script>
+<script src="app.js?v=20261018-direct"></script>
 </body>
 </html>
