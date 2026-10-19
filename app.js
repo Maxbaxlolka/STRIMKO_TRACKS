@@ -46,7 +46,7 @@ async function maybeStartNext(){
    }
   }else{
    const next=pending()[0];
-   if(next){await getTitle(next);await startOrder(next);}
+   if(next){await startOrder(next);getTitle(next);}
   }
  }catch(e){say('adminMessage','Автоочередь: '+err(e),true);scheduleQueue(4000);}
  finally{
@@ -55,10 +55,24 @@ async function maybeStartNext(){
  }
 }
 // Controller is muted: OBS remains the audible player. Keep the admin tab open.
-function initController(){if(controller||!admin)return;if(window.YT?.Player){controller=new YT.Player('queueController',{height:'2',width:'2',playerVars:{autoplay:1,controls:0,playsinline:1,mute:1,origin:location.origin},events:{onReady:()=>{controllerReady=true;controller.mute();syncController();},onStateChange:e=>{if(e.data===YT.PlayerState.ENDED)onControllerEnded();if(e.data===YT.PlayerState.PLAYING){controllerStartedAt=Date.now();controllerRetries=0;const d=controller.getDuration();if(activeOrder&&d>0){metadata.set(activeOrder.videoId,{title:metadata.get(activeOrder.videoId)?.title||activeOrder.title,duration:d});render();}}},onError:e=>{say('adminMessage','YouTube: ошибка '+e.data+'. Перехожу к следующему треку.',true);onControllerEnded();}}});controllerTimer=setInterval(()=>{checkController();if(autoQueue&&!activeOrder&&pending().length)scheduleQueue(100);},3000);return;}if(!document.querySelector('script[data-yt-controller]')){const script=document.createElement('script');script.dataset.ytController='1';script.src='https://www.youtube.com/iframe_api';document.head.append(script);}window.onYouTubeIframeAPIReady=initController;}
-let activeOrder=null;
-function syncController(){if(!controllerReady||!admin)return;if(!activeOrder){controllerVideo='';controller.stopVideo();return;}if(controllerVideo!==activeOrder.orderId){controllerVideo=activeOrder.orderId;controllerStartedAt=Date.now();controllerRetries=0;controller.loadVideoById(activeOrder.videoId);controller.mute();}if(activeOrder.paused){controller.pauseVideo();}else if(controller.getPlayerState()===YT.PlayerState.PAUSED||controller.getPlayerState()===YT.PlayerState.CUED){controller.playVideo();}}
-function checkController(){if(!admin||!autoQueue||!controllerReady||!activeOrder||activeOrder.paused||ending)return;const state=controller.getPlayerState();const duration=controller.getDuration(),position=controller.getCurrentTime();if(duration>0){const m=metadata.get(activeOrder.videoId)||{};if(m.duration!==duration){metadata.set(activeOrder.videoId,{...m,title:m.title||activeOrder.title,duration});render();}if(position>=duration-0.6&&state!==YT.PlayerState.PLAYING){onControllerEnded();return;}}if(Date.now()-controllerStartedAt>15000&&[YT.PlayerState.UNSTARTED,YT.PlayerState.CUED,YT.PlayerState.BUFFERING].includes(state)){if(controllerRetries++<2){controller.playVideo();controllerStartedAt=Date.now();}else{say('adminMessage','Видео не запускается. Автоматически перехожу к следующему.',true);onControllerEnded();}}}
+function initController(){if(controller||!admin)return;if(window.YT?.Player){controller=new YT.Player('queueController',{height:'200',width:'240',playerVars:{autoplay:1,controls:0,playsinline:1,mute:1,origin:location.origin},events:{onReady:()=>{controllerReady=true;controller.mute();syncController();},onStateChange:e=>{if(e.data===YT.PlayerState.ENDED)onControllerEnded();if(e.data===YT.PlayerState.PLAYING){controllerStartedAt=Date.now();controllerRetries=0;controllerLastProgressAt=Date.now();const d=controller.getDuration();if(activeOrder&&d>0){metadata.set(activeOrder.videoId,{title:metadata.get(activeOrder.videoId)?.title||activeOrder.title,duration:d});render();}}},onError:e=>{say('adminMessage','YouTube: ошибка '+e.data+'. Перехожу к следующему треку.',true);onControllerEnded();}}});controllerTimer=setInterval(()=>{checkController();if(autoQueue)scheduleQueue(500);},3000);return;}if(!document.querySelector('script[data-yt-controller]')){const script=document.createElement('script');script.dataset.ytController='1';script.src='https://www.youtube.com/iframe_api';document.head.append(script);}window.onYouTubeIframeAPIReady=initController;}
+let activeOrder=null,controllerLastPosition=0,controllerLastProgressAt=0,controllerPlaybackMs=0,controllerLastTick=0;
+function syncController(){if(!controllerReady||!admin)return;if(!activeOrder){controllerVideo='';controller.stopVideo();return;}if(controllerVideo!==activeOrder.orderId){controllerVideo=activeOrder.orderId;controllerStartedAt=Date.now();controllerRetries=0;controllerLastPosition=0;controllerLastProgressAt=Date.now();controllerPlaybackMs=0;controllerLastTick=Date.now();controller.loadVideoById(activeOrder.videoId);controller.mute();}if(activeOrder.paused){controller.pauseVideo();}else if(controller.getPlayerState()===YT.PlayerState.PAUSED||controller.getPlayerState()===YT.PlayerState.CUED){controller.playVideo();}}
+function checkController(){if(!admin||!autoQueue||!controllerReady||!activeOrder||activeOrder.paused||ending)return;const state=controller.getPlayerState();const duration=controller.getDuration(),position=controller.getCurrentTime();if(duration>0){const m=metadata.get(activeOrder.videoId)||{};if(m.duration!==duration){metadata.set(activeOrder.videoId,{...m,title:m.title||activeOrder.title,duration});render();}if(position>=duration-0.6&&state!==YT.PlayerState.PLAYING){onControllerEnded();return;}}const nowMs=Date.now();
+if(Number.isFinite(position)&&position>controllerLastPosition+0.15){controllerLastPosition=position;controllerLastProgressAt=nowMs;}
+if(state===YT.PlayerState.PLAYING){
+ const dt=Math.max(0,Math.min(nowMs-controllerLastTick,5000));
+ controllerPlaybackMs+=dt;
+}
+controllerLastTick=nowMs;
+// Do not leave the queue stuck forever if the hidden YouTube controller is blocked.
+// Only use a clock fallback after YouTube has supplied a trustworthy duration.
+if(duration>0&&controllerPlaybackMs>=duration*1000+2500){onControllerEnded();return;}
+if(nowMs-controllerLastProgressAt>18000){
+ if(controllerRetries++<3){controller.playVideo();controllerLastProgressAt=nowMs;}
+ else if(duration>0){say('adminMessage','Контроллер YouTube завис. Переключаю очередь.',true);onControllerEnded();}
+ else {say('adminMessage','YouTube не сообщает длительность. Проверь, что видео доступно для встраивания.',true);controllerLastProgressAt=nowMs;}
+}}
 async function onControllerEnded(){if(!admin||!autoQueue||!activeOrder||ending)return;ending=true;const ended=activeOrder;try{const a=(await db.ref(base+'/active').once('value')).val();if(a?.orderId!==ended.orderId)return;const x=items.find(v=>v.id===ended.orderId);if(x)await finishOrder(x,'done');else await db.ref(base+'/active').remove();}catch(e){say('adminMessage','Не удалось завершить трек: '+err(e),true);}finally{ending=false;scheduleQueue(400);}}
 db.ref(base+'/requests').on('value',snap=>{items=[];const data=snap.val()||{};for(const [uid,slots] of Object.entries(data))for(const [slot,v] of Object.entries(slots||{}))if(v&&v.videoId)items.push({id:uid+'_'+slot,uid,slot,...v});items.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)||a.id.localeCompare(b.id));render();scheduleQueue(150);},e=>say('requestMessage','Нет доступа к очереди: '+err(e),true));
 db.ref(base+'/active').on('value',s=>{activeOrder=s.val();paused=!!activeOrder?.paused;syncController();if(admin)renderAdmin();if(!activeOrder)scheduleQueue(200);});
