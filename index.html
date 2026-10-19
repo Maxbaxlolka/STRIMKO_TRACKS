@@ -158,7 +158,7 @@
     </label>
     <label class="check"><input id="autoQueueEnabled" type="checkbox" checked> Автоматически запускать следующие треки</label>
     <p class="muted">Автопереключение работает, пока эта вкладка открыта и администратор авторизован. OBS показывает и озвучивает треки.</p>
-    <div id="queueController" style="position:absolute;left:-9999px;width:2px;height:2px;overflow:hidden"></div>
+    <div id="queueController" style="position:fixed;left:-10000px;top:0;width:240px;height:200px;overflow:hidden;pointer-events:none"></div>
     <button id="saveSettingsBtn">Сохранить настройки</button>
 
     <div id="adminMessage" class="message"></div>
@@ -192,6 +192,6 @@
     });
 })();
 </script>
-<script src="app.js?v=20261018-fifo-fix-6"></script>
+<script src="app.js?v=20261019-autoplay-fix-7"></script>
 </body>
 </html>
